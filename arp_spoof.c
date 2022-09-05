@@ -16,7 +16,6 @@ I DO NOT encourage or promote any illegal activities.
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <sys/types.h>
-#include <netdb.h>
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
 #include <stdlib.h>
